@@ -1,0 +1,25 @@
+{
+  "target": "labs/vuln-web/app/vulnweb_app.py",
+  "built_by": "reading the source by hand, NOT by running a tool",
+  "description": "Hand-verified ground truth for the vuln-web app. Each finding is a real, intentional vulnerability confirmed by reading vulnweb_app.py (every sink is commented `# VULN`). This is the honest answer key the week-6 studio duel and the graded Duel 2 (week 8) are scored against. Note what is deliberately ABSENT: there is no Broken Access Control entry, because the app has no authentication or authorization code to break. An LLM that reports BAC here is hallucinating, and that false positive is the whole point of the exercise.",
+  "findings": [
+    {
+      "rule": "sqli",
+      "location": "do_login",
+      "severity": "high",
+      "note": "SELECT is built with f-string interpolation of user/pw, no parameterization. Confirmable by leaking the admin canary FLAG-sqli-9f2c-admin-session."
+    },
+    {
+      "rule": "xss",
+      "location": "do_reflect",
+      "severity": "high",
+      "note": "The `name` parameter is placed into the HTML response with no output encoding. The /safe endpoint (do_reflect_safe) is the html.escape'd fix and is NOT a finding."
+    },
+    {
+      "rule": "cmdi",
+      "location": "do_ping",
+      "severity": "high",
+      "note": "The `host` value is concatenated into `ping -c 1 {host}`. A shell metacharacter smuggles in a second command."
+    }
+  ]
+}
