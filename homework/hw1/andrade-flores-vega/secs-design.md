@@ -1,136 +1,206 @@
-# SECS — Secure Electronic Contract Signing (Design Document)
+# Secure Electronic Contract Signing (SECS)
 
-Parties: **Alice** (provider) and **Bob** (client). Adversary: **Mallory**, who controls
-the network (reads, drops, replays, and modifies messages) but does not hold any party's
-private key. A **CA** is the trust anchor.
+## 0. Procedure
 
-Goals: non-repudiation of origin, non-repudiation of receipt, integrity, and
-confidentiality of the contract terms in transit.
+### Scope and Assumptions
 
----
+**Parties:** Alice, Bob, and a Trusted Third Party (TTP).
 
-## 1. Primitives and why each
+**Assumptions**
+1. A PKI exists. Alice, Bob and the TTP each hold an certificate issued by a CA that everyone trusts, and each controls their own private key.
+2. The TTP is trusted to be honest and to follow the protocol. It is separate from the CA.
+3. The contract is considered **valid only when both ACKs have been received** by the TTP.
 
-| Need | Primitive | Course source | Why this one |
-|---|---|---|---|
-| Fingerprint of the contract | **SHA-256** | Week 3 (`hashlib`; used in `dh_pki.digest`) | Collision-resistant, so a signature over the digest commits to the whole contract. The week-3 toy `md_hash` is only a break target. |
-| Origin + integrity + non-repudiation | **Digital signature, hash-then-sign (RSA)** | Weeks 4–5 (`sign`/`verify`) | Only the holder of the private key can produce the signature, and anyone with the certified public key can verify it. A MAC cannot give non-repudiation, because both sides hold the key. |
-| Binding a public key to a person | **Certificates + chain validation against a trust store** | Week 5 (`make_cert`, `validate`) | A raw public key says nothing about who owns it. The CA certifies it, and the verifier checks the chain. |
-| Shared session key over a hostile wire | **Diffie–Hellman (MODP group)** | Week 5 | Gives a fresh shared secret without ever sending a key. It is secure against a passive eavesdropper, but a MITM defeats it unless the endpoints are authenticated. |
-| Authenticating the DH exchange | **Signatures over the DH values** | Week 5 (the "authenticated DH" fix) | Closes the Mallory-in-the-middle hole shown in the week-5 studio. |
-| Deriving session keys | **HMAC-SHA256** as the key-derivation step | Week 3 (`good_mac` uses real HMAC) | Produces separate keys per direction from the DH secret and both nonces. HMAC avoids the `H(secret‖msg)` length-extension flaw. |
-| Confidentiality + in-transit integrity | **AEAD: AES-GCM** | Week 3 (named in the studio README) | Encrypts and authenticates in one primitive. Any modification of a ciphertext is rejected. The caveat is that a (key, nonce) pair must never repeat. |
-| Secret comparisons | **`hmac.compare_digest`** | Week 4 | Constant-time, so no early-exit timing leak. |
-
-**Parameter note.** The studio code uses teaching sizes (64-bit RSA, 1024-bit MODP). A
-real deployment would use RSA ≥ 3072 (or ECDSA), a DH group ≥ 2048 bits, and RSA-PSS
-padding rather than the studio's textbook `digest % n`. These are choices *outside* the
-studios; the design argument does not change.
-
-**Key separation.** Each party has two distinct secrets: a long-term **signing key**
-(certified by the CA) and a per-session **ephemeral DH exponent**. Neither is ever used
-for the other's job.
+**Notation**
+- `H(x)` = SHA-256 of `x`
+- `Sign(sk_X, m)` = signature of `X` over `m`, computed on `H(m)` (first hash, then sign)
 
 ---
 
-## 2. Message flow and trust boundaries
+### Steps
+
+#### Phase 0: Setup (before any contract)
+- Each party obtains a certificate from the CA.
+- Alice and Bob each open a TLS 1.3 connection to the TTP.
+
+#### Phase 1: Intent to sign
+
+**Step 1. Alice and Bob compute the contract hash.**
+Each computes `h_c = H(contract)`. The value must be the same if they have the same contract.
+
+**Step 2. Each party builds and signs an intent message.**
 
 ```
- ┌─────────── ALICE DOMAIN ──────────┐   ┌────── CA DOMAIN ──────┐   ┌─────────── BOB DOMAIN ────────────┐
- │ trusts: own sk_A, CA root key     │   │ trusts: own root key  │   │ trusts: own sk_B, CA root key     │
- │ generates sk_A herself (CSPRNG)   │   │ signs pub keys only;  │   │ generates sk_B himself (CSPRNG)   │
- │                                   │   │ never sees sk_A/sk_B  │   │                                   │
- └───────────────┬───────────────────┘   └──────────┬────────────┘   └───────────────┬───────────────────┘
-                 │  (0) enrolment: send pk_A, get Cert_A      Cert_B ← pk_B (0)      │
-                 │ ◄──────────────────────────────────┴─────────────────────────────►│
- ════════════════╪═════════════════ TRUST BOUNDARY: untrusted network (Mallory) ══════╪════════════════
-                 │                                                                   │
-  PHASE 1 — authenticated key agreement                                              │
-   (1) A → B :  Cert_A, g^a, N_A, Sig_A( g^a ‖ N_A ‖ id_B )                         │
-   (2) B → A :  Cert_B, g^b, N_B, Sig_B( g^b ‖ N_B ‖ g^a ‖ N_A ‖ id_A )             │
-       Both: validate(Cert chain, trust store) → verify signature → derive           │
-             K_AB = HMAC(g^ab, "A→B"‖N_A‖N_B),   K_BA = HMAC(g^ab, "B→A"‖N_A‖N_B)   │
-                 │                                                                   │
-  PHASE 2 — contract (every message below is AES-GCM under K_dir, nonce = counter)   │
-   (3) A → B :  Enc( contract C, contract_id )          H_C = SHA-256(contract_id‖C‖id_A‖id_B‖N_A‖N_B)
-   (4) B → A :  Enc( Sig_B(H_C) )                       Bob signs the contract
-   (5) A → B :  Enc( Sig_A(H_C) )                       Alice countersigns → final copy F = (C, Sig_A, Sig_B)
-  PHASE 3 — receipts (signatures cover H_F = SHA-256(C‖Sig_A‖Sig_B))
-   (6) B → A :  Enc( R_B = Sig_B("receipt"‖H_F) )       Bob received the final signed copy
-   (7) A → B :  Enc( R_A = Sig_A("receipt"‖H_F) )       Alice received Bob's signature and receipt
+Intent_X = { contract_hash = h_c, signer = X, counterparty = Y, session_id }
+Sig_X   = Sign(sk_X, Intent_X)
 ```
 
-**Trust boundaries**
-- **Network (untrusted).** Everything between the domains is attacker-controlled. Nothing
-  on it is trusted until it is verified by a signature, a certificate chain, or an AEAD tag.
-- **Each party's domain.** Trusted to hold its own signing key. The key is generated
-  locally and never leaves.
-- **CA.** Trusted for exactly one thing: the binding of identity to public key. It
-  never holds a private key, so it cannot sign in anyone's name.
+The signature covers the whole message, so the contract version, the identities and the session cannot be altered without detection.
 
-**Why the evidence stays verifiable.** The signatures in steps 4–7 are over *plaintext
-hashes*, not over ciphertext. After the session key is discarded, either party can still
-show `C`, `Sig_A`, `Sig_B`, `R_A`, `R_B` and the certificates to a third party, who verifies them
-without any session secret.
+**Step 3. Send to the TTP (inside TLS).**
+
+```
+Alice -> TTP : Intent_A, Sig_A
+Bob   -> TTP : Intent_B, Sig_B
+```
+
+**Step 4. The TTP validates each intent.**
+- Verifies the signer's certificate and the signature.
+- Checks that the `session_id` is new and that both intents refer to the same `contract_hash` and the same pair of parties.
+
+The TTP releases nothing until both valid intents have arrived.
+
+#### Phase 2: Delivery of the final copy
+
+**Step 5. The TTP builds and delivers the final copy.**
+
+```
+FinalCopy = { contract, Intent_A, Sig_A, Intent_B, Sig_B }
+
+TTP -> Alice : FinalCopy, request_id_A
+TTP -> Bob   : FinalCopy, request_id_B
+```
+
+`request_id_A` and `request_id_B` are fresh random values generated by the TTP. The TTP records them as outstanding requests. Delivery is inside TLS.
+
+**Step 6. Each party verifies the final copy.**
+- Checks both signatures against the certificates.
+- Checks that `H(contract)` equals the `contract_hash` in both intents.
+
+#### Phase 3: Acknowledgment
+
+**Step 7. Each party builds and signs an ACK.**
+
+```
+h_f      = H(FinalCopy)
+ACK_X    = { request_id_X, final_copy_hash = h_f, signer = X }
+SigACK_X = Sign(sk_X, ACK_X)
+```
+
+`h_f` covers the whole final copy, including both signatures. Only someone who actually holds that exact object can compute it, so the ACK cannot be produced without having received the final copy.
+
+```
+Alice -> TTP : ACK_A, SigACK_A
+Bob   -> TTP : ACK_B, SigACK_B
+```
+
+**Step 8. The TTP validates each ACK.**
+- Verifies the signature and the certificate.
+- Checks that `request_id` matches an outstanding request it issued, and that it has not been used before. Unsolicited or replayed ACKs are rejected.
+- Checks that `final_copy_hash` equals the hash of the final copy it sent.
+
+#### Phase 4: Distribution of the evidence
+
+**Step 9. When both valid ACKs have arrived, the TTP forwards each one to the other party.**
+
+```
+TTP -> Bob   : ACK_A, SigACK_A
+TTP -> Alice : ACK_B, SigACK_B
+```
+
+Each party verifies the other's ACK with the other's public key, so they do not need to trust the TTP for its authenticity. The TTP can deliver this evidence but cannot forge it.
+
+After this, the contract is now valid.
+
+#### How each requirement is met
+
+| Requirement | Mechanism |
+|---|---|
+| Non-repudiation of origin | Each party's signature over an intent that contains the contract hash. Verifiable with the PKI. |
+| Non-repudiation of receipt | Each party's signed ACK over the hash of the final copy and a TTP-issued request ID, held by both parties. |
+| Integrity | SHA-256 binds the content, and the signature over the hash makes any alteration detectable. |
+| Confidentiality in transit | TLS 1.3 on every link (Alice-TTP and Bob-TTP). |
 
 ---
 
-## 3. Control Scorecard (axis 2): each guarantee and its condition
+## 1. Cryptographic primitives and justification
 
-**Non-repudiation of origin.** Neither party can deny having signed `H_C`
-**provided** (a) the signer's private key was not compromised or shared, (b) the CA did
-not mis-issue a certificate binding that key to the wrong identity, (c) SHA-256 remains
-collision-resistant and the signature scheme is unforged, and (d) the certificate was valid
-(not expired or revoked) at signing time. Because the signed hash covers both identities
-and both nonces, the signature cannot be moved to another contract or session.
+| Primitive | Where it is used | Why |
+|---|---|---|
+| **SHA-256** (hash) | Contract hash `h_c`, final-copy hash `h_f`, and the digest that is signed | Gives a fixed-size fingerprint that is collision-resistant and one-way. Different contract versions or different final copies give different values. It is public, so on its own it detects accidental changes only. |
+| **Digital signature** (RSA) | Intents and ACKs | Provides integrity against an active attacker (it cannot recompute a valid signature without the private key), authentication of the signer, and non-repudiation, because only the signer holds the private key and any third party can verify it later. |
+| **PKI** | Binding public keys to Alice, Bob and the TTP | Lets a verifier, including a judge, trust that a public key belongs to a specific identity, without prior contact. Certificate validity and revocation are checked at verification time. |
+| **TLS 1.3** | Every link between a party and the TTP | Provides confidentiality and tamper protection on the wire, forward secrecy, and mutual authentication of the connection. It is a standard, well-analyzed protocol, so we avoid designing our own. It protects the channel only and leaves no evidence after the session ends. |
+| **Random request ID / session ID** (from a cryptographically secure random generator) | Match ACKs to TTP requests, and make each exchange unique | Prevents replay and unsolicited ACKs. It sits inside the signed data so it cannot be swapped. |
 
-**Non-repudiation of receipt.** Neither party can deny having received the final signed
-copy **provided** the corresponding receipt (`R_B` for Bob, `R_A` for Alice) was
-actually delivered and stored by the other side, plus the same key and CA conditions as
-above. This guarantee is **weaker** than origin: whoever sends the last message of the
-protocol (Alice, in step 7) could withhold it. That is the classic fair-exchange problem,
-which this design does not eliminate; see section 5.
+**Note:** TLS protects data in transit while signatures inside the payload protect data as evidence. The signed messages stay verifiable and storable independently of the transport layer.
 
-**Integrity.** Any alteration of the contract is detected **provided** (a) SHA-256 is
-collision-resistant, so the signed digest pins one contract, (b) the verifier checks the
-signatures against a *certified* key, and (c) the AEAD tag check is enforced and the
-(key, nonce) pair is never reused. Hash alone is not enough, since a hash anyone can recompute proves
-nothing against an active attacker, so integrity rests on the signatures plus the AEAD tag.
+---
 
-**Confidentiality of the terms in transit.** The terms stay secret from an observer
-**provided** (a) the DH exchange was authenticated (steps 1–2 verified), so no MITM
-sits in the middle, (b) the DH exponents come from a good CSPRNG and the group is large
-enough, (c) AES-GCM is used with unique nonces under a fresh per-session, per-direction
-key, and (d) the endpoints are not compromised. Confidentiality is *in transit only*: once
-decrypted, protection is the endpoint's responsibility. DH without step (a) would give a
-private conversation with an impostor.
+## 2. Message Flow
+
+Just to clarify, `║` is a trust boundary: on one side is something you control, on the other something you do not. Every arrow that crosses it travels over an untrusted network inside a TLS 1.3 tunnel, and carries a signature inside the payload.
+
+```
+  [ ALICE ]  zone A    ║     [ TTP ]  trusted*      ║  [ BOB ]  zone B
+  holds sk_A           ║     holds sk_TTP           ║  holds sk_B
+                       ║                            ║
+                       ║    -- PHASE 1: INTENT --   ║
+  [1] sign Intent_A    ║                            ║   [1] sign Intent_B
+  (2) Intent_A,Sig_A ──╫───────>            <───────╫── (2) Intent_B,Sig_B
+                       ║                            ║
+                       ║ [3] verify both intents    ║
+                       ║ [3] wait for BOTH          ║
+                       ║                            ║
+                       ║ -- PHASE 2: FINAL COPY --  ║
+                       ║    [4] build FinalCopy     ║
+  (5) FinalCopy+id  <──╫───────              ───────╫─> (5) FinalCopy+id
+  [6] verify copy      ║                            ║  [6] verify copy
+                       ║                            ║
+                       ║     -- PHASE 3: ACK --     ║
+  [7] sign ACK_A       ║                            ║   [7] sign ACK_B
+  (8) ACK_A,SigACK_A ──╫───────>            <───────╫── (8) ACK_B,SigACK_B
+                       ║ [9] verify ACKs (id, h_f)  ║
+                       ║ [9] wait for BOTH ACKs     ║
+                       ║                            ║
+                       ║                            ║
+                       ║  -- PHASE 4: EVIDENCE --   ║
+ (10) ACK_B,SigACK_B <─╫───────              ───────╫─> (10) ACK_A,SigACK_A
+  [11] verify ACK_B    ║                            ║  [11] verify ACK_A
+                       ║                            ║
+                       ║       CONTRACT VALID       ║
+
+```
+
+### Legend
+
+| Step | Content |
+|---|---|
+| 1 | `Intent = { H(contract), signer, counterparty, session_id}`, `Sig = Sign(sk, Intent)` |
+| 2 | Intent and signature sent to the TTP |
+| 3 | TTP checks certificate, signature, new `session_id`, same contract hash and parties. Releases nothing until both intents arrive |
+| 4 | `FinalCopy = {contract, Intent_A, Sig_A, Intent_B, Sig_B}`, plus a fresh random `request_id` per party |
+| 5 | FinalCopy and `request_id` sent to each party |
+| 6 | Each party verifies both signatures and that `H(contract)` matches |
+| 7 | `ACK = {ACK, request_id, H(FinalCopy), signer}`, `SigACK = Sign(sk, ACK)` |
+| 8 | ACK and signature sent to the TTP |
+| 9 | TTP checks signature, outstanding unused `request_id`, and `H(FinalCopy)`. Waits for both ACKs |
+| 10 | TTP forwards each ACK to the other party |
+| 11 | Each party verifies the other's ACK with the other's public key, without trusting the TTP |
+
+---
+
+## 3. Control Scorecard (axis 2)
+
+**Non-repudiation of origin** is provided by each party's signed intent, which includes `H(contract)`, **provided** the signing key was not compromised or revoked before signing, the signature verifies against a valid certificate.
+ 
+**Non-repudiation of receipt** is provided by each party's signed ACK over `H(FinalCopy)` and the TTP-issued `request_id`, **provided** the ACK is signed with the same key assumptions as above and each party holds the other's ACK after the forwarding step. Only someone holding the exact final copy can compute `H(FinalCopy)`. If an ACK never arrives, the contract stays unconfirmed, and the party who already sent theirs has no recourse inside the protocol.
+ 
+**Integrity** is provided by SHA-256 over the contract, the final copy and each message, with the digest signed, **provided** every receiver actually performs the verification before accepting a message and all security-relevant fields are inside the signed data.
+ 
+**Confidentiality of the contract terms in transit** is provided by TLS 1.3 on every link between a party and the TTP, **provided** all links use TLS as described above.
+
 
 ---
 
 ## 4. Which of the six broken deployments' mistakes does this avoid?
 
-| # | Broken deployment | Mistake | How SECS avoids it |
-|---|---|---|---|
-| 1 | `reused_pad` | One pad/key reused for every message, so `C₁⊕C₂ = P₁⊕P₂` | No pad is used. Each session derives fresh keys from a new DH exchange, with separate keys per direction, so no key encrypts two sessions. |
-| 2 | `ecb_store` | ECB: equal plaintext blocks give equal ciphertext blocks, leaking structure | AES-GCM, never ECB. A unique nonce per message makes identical plaintexts produce different ciphertexts. |
-| 3 | `ctr_log` | CTR nonce reused across entries (also fatal in GCM) | The nonce is a per-direction counter under a key that is new each session, so a (key, nonce) pair never repeats. A counter that would wrap or repeat aborts the session. |
-| 4 | `token_mac` | `SHA256(secret‖data)`, which is length-extendable | No `H(secret‖msg)` anywhere. Integrity comes from signatures and the AEAD tag. Key derivation uses HMAC, which nests the hash. |
-| 5 | `keygen_fleet` | Low-entropy keygen produced a shared RSA prime | Each party generates its own key locally from a CSPRNG, instead of by a central authority or a shared seeded PRNG. The CA only certifies public keys, so it never holds a private key. (This is conditional on each device having real entropy; see section 5.) |
-| 6 | `timing_compare` | Early-exit comparison leaks the matching prefix | Tag and digest comparisons use `hmac.compare_digest`, and signature verification and the GCM tag check are done by the library in constant time. |
 
----
-
-## 5. Known limits (carried into Part C)
-
-- **Fair exchange.** The last sender can withhold the final receipt. Mitigations such as a
-  trusted timestamp or escrow service add a new trusted party, so we state the limit and do not claim to
-  solve it.
-- **Trusted CA.** Origin, receipt and confidentiality all inherit the assumption that the CA
-  never mis-issues. We also assume revocation (CRL or OCSP) is checked, and we have not specified it.
-- **Device entropy.** Avoiding break #5 depends on every party's CSPRNG actually being
-  seeded. If it is not, the design fails the same way.
-- **Confidentiality vs. auditability.** Signing plaintext hashes makes the evidence portable
-  to a third party, but whoever holds the signed contract and the evidence can reveal it. We
-  chose provable evidence over secrecy of the contract against a later dispute.
-- **Parameters.** The studio sizes are for teaching. The scorecard statements assume
-  production-grade sizes and padding.
+| Broken deployment | Mistake | How the design avoids it |
+|---|---|---|
+| `reused_pad` | One pad/key reused for every message, so `C1 XOR C2 = P1 XOR P2` | SECS never encrypts with its own keystream or one-time pad. Confidentiality comes from TLS 1.3. |
+| `ecb_store` | ECB: equal plaintext blocks give equal ciphertext blocks, leaking structure | TLS 1.3 only allows AEAD ciphers, so ECB is not being used. |
+| `ctr_log` | CTR nonce reused across entries (also fatal in GCM) | TLS 1.3 works in such a way that nonces never repeat under one key. |
+| `token_mac` | `SHA256(secret‖data)`, which is length-extendable | SECS has no secret-prefix MAC and no shared secret between parties. Integrity and origin come from digital signatures over `H(m)`, which are not forgeable by length extension. |
+| `keygen_fleet` | Low-entropy keygen produced a shared RSA prime | By default, this problem is not fixed by SECS because it uses RSA. It could be solved by requiring  a strong key generation. |
+| `timing_compare` | Early-exit comparison leaks the matching prefix | This is an implementation requirement, not a protocol property. The implemenation must compare identifiers and hashes with a constant-time function. |
