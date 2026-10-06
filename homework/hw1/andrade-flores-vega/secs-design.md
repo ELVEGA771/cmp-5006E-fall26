@@ -2,7 +2,7 @@
 
 ## 0. Procedure
 
-### Scope and Assumptions
+First, let's define scope, assumptions, and notation.
 
 **Parties:** Alice, Bob, and a Trusted Third Party (TTP).
 
@@ -15,15 +15,13 @@
 - `H(x)` = SHA-256 of `x`
 - `Sign(sk_X, m)` = signature of `X` over `m`, computed on `H(m)` (first hash, then sign)
 
----
+With this in mind, let's see the process in order to sign a contract.
 
-### Steps
-
-#### Phase 0: Setup (before any contract)
+### Phase 0: Setup (before any contract)
 - Each party obtains a certificate from the CA.
 - Alice and Bob each open a TLS 1.3 connection to the TTP.
 
-#### Phase 1: Intent to sign
+### Phase 1: Intent to sign
 
 **Step 1. Alice and Bob compute the contract hash.**
 Each computes `h_c = H(contract)`. The value must be the same if they have the same contract.
@@ -50,7 +48,7 @@ Bob   -> TTP : Intent_B, Sig_B
 
 The TTP releases nothing until both valid intents have arrived.
 
-#### Phase 2: Delivery of the final copy
+### Phase 2: Delivery of the final copy
 
 **Step 5. The TTP builds and delivers the final copy.**
 
@@ -67,7 +65,7 @@ TTP -> Bob   : FinalCopy, request_id_B
 - Checks both signatures against the certificates.
 - Checks that `H(contract)` equals the `contract_hash` in both intents.
 
-#### Phase 3: Acknowledgment
+### Phase 3: Acknowledgment
 
 **Step 7. Each party builds and signs an ACK.**
 
@@ -89,7 +87,7 @@ Bob   -> TTP : ACK_B, SigACK_B
 - Checks that `request_id` matches an outstanding request it issued, and that it has not been used before. Unsolicited or replayed ACKs are rejected.
 - Checks that `final_copy_hash` equals the hash of the final copy it sent.
 
-#### Phase 4: Distribution of the evidence
+### Phase 4: Distribution of the evidence
 
 **Step 9. When both valid ACKs have arrived, the TTP forwards each one to the other party.**
 
@@ -102,7 +100,7 @@ Each party verifies the other's ACK with the other's public key, so they do not 
 
 After this, the contract is now valid.
 
-#### How each requirement is met
+### How each requirement is met
 
 | Requirement | Mechanism |
 |---|---|
@@ -161,22 +159,6 @@ Just to clarify, `║` is a trust boundary: on one side is something you control
                        ║       CONTRACT VALID       ║
 
 ```
-
-### Legend
-
-| Step | Content |
-|---|---|
-| 1 | `Intent = { H(contract), signer, counterparty, session_id}`, `Sig = Sign(sk, Intent)` |
-| 2 | Intent and signature sent to the TTP |
-| 3 | TTP checks certificate, signature, new `session_id`, same contract hash and parties. Releases nothing until both intents arrive |
-| 4 | `FinalCopy = {contract, Intent_A, Sig_A, Intent_B, Sig_B}`, plus a fresh random `request_id` per party |
-| 5 | FinalCopy and `request_id` sent to each party |
-| 6 | Each party verifies both signatures and that `H(contract)` matches |
-| 7 | `ACK = {ACK, request_id, H(FinalCopy), signer}`, `SigACK = Sign(sk, ACK)` |
-| 8 | ACK and signature sent to the TTP |
-| 9 | TTP checks signature, outstanding unused `request_id`, and `H(FinalCopy)`. Waits for both ACKs |
-| 10 | TTP forwards each ACK to the other party |
-| 11 | Each party verifies the other's ACK with the other's public key, without trusting the TTP |
 
 ---
 
