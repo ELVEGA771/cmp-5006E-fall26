@@ -1,4 +1,5 @@
 # Secure Electronic Contract Signing (SECS)
+Daniel Andrade - Andrés Vega - Carlos Flores
 
 ## 0. Procedure
 

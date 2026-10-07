@@ -1,4 +1,5 @@
 # Where our breaks or design might be unfair.
+Daniel Andrade - Andrés Vega - Carlos Flores
 
 **1. Did a break rely on an assumption the deployment didn't actually make?**
 
