@@ -10,25 +10,26 @@ notebooks); no real secrets or personal data.
 
 **Date:** 2026-10-06
 **Tool:** OpenCode (DeepSeek V4.1 Flash)
-**What I asked:** "Necesito que me ayudes rompiendo los deployments 5 y 6" siguiendo el
-  formato de los breaks ya resueltos, y que el código reutilice snippets de las clases
-  de la semana 4.
+**What I asked:** "I need you to help me break deployments 5 and 6" following the
+  format of the breaks already solved, and I wanted the code to reuse snippets from
+  the week-4 class material.
 **What I got:**
-- `breaks/06-verify_login/verify_login.py` — `timing_attack` con `time_guesses` del
-  studio (mediciones interleaved) y `__main__` que imprime el artefacto.
-- `breaks/06-verify_login/verify_login.ipynb` — ejecutado: recupera `83fabf35`, cinco
-  corridas de fiabilidad (5/5) y una celda del fix con `constant_time_equal` /
+- `breaks/06-verify_login/verify_login.py` — `timing_attack` with the studio's
+  `time_guesses` (interleaved measurements) and a `__main__` block that prints the
+  artifact.
+- `breaks/06-verify_login/verify_login.ipynb` — executed: recovers `83fabf35`, five
+  reliability runs (5/5), and a cell with the fix using `constant_time_equal` /
   `hmac.compare_digest`.
-- `breaks/06-verify_login/README.md` — assumption, misuse vs. primitive, artefacto y
-  fiabilidad (41 rounds por candidato, ~34 us de separación por byte).
-- El asistente señaló que el `--check` del instructor falla en `#6` en esta máquina
-  (usa medianas secuenciales); la versión interleaved recupera 5/5.
-- Después, a pedido del equipo, simplificó el lenguaje del README.
+- `breaks/06-verify_login/README.md` — assumption, misuse vs. primitive, artifact, and
+  reliability (41 rounds per candidate, ~34 us of separation per byte).
+- The assistant pointed out that the instructor's `--check` fails on `#6` on this
+  machine (it uses sequential medians); the interleaved version recovers 5/5.
+- Afterwards, at the team's request, it simplified the README language.
 
-**What I did with it:** Revisé los archivos generados y pedí ajustes de redacción.
+**What I did with it:** Reviewed the generated files and asked for wording adjustments.
 
-**Did I understand it?** Sí — el tiempo de la comparación depende del prefijo correcto;
-  con las mediciones interleaved y la mediana, la señal queda visible.
+**Did I understand it?** Yes — the comparison time depends on the correct prefix; with
+  the interleaved measurements and the median, the signal becomes visible.
 
 ---
 
@@ -36,39 +37,40 @@ notebooks); no real secrets or personal data.
 
 **Date:** 2026-10-06
 **Tool:** OpenCode (DeepSeek V4.1 Flash)
-**What I asked:** La misma petición (deployments 5 y 6, reutilizando código de clase).
+**What I asked:** The same request (deployments 5 and 6, reusing class code).
 **What I got:**
-- `breaks/05-keygen_fleet/keygen_fleet.py` — scan pairwise con `math.gcd` y
-  `factor_from_shared` del studio de la semana 4 (`studios/week-04/rsa_lab.py`) para
-  recuperar `d` de ambos dispositivos; `__main__` que imprime el artefacto.
-- `breaks/05-keygen_fleet/keygen_fleet.ipynb` — ejecutado: moduli → gcd →
-  factorización → `d` → round-trip RSA.
-- `breaks/05-keygen_fleet/README.md` — assumption, misuse vs. primitive y artefacto.
-- Artefacto: `p = 14723961130838400979`,
+- `breaks/05-keygen_fleet/keygen_fleet.py` — pairwise scan with `math.gcd` and
+  `factor_from_shared` from the week-4 studio (`studios/week-04/rsa_lab.py`) to recover
+  `d` for both devices; a `__main__` block that prints the artifact.
+- `breaks/05-keygen_fleet/keygen_fleet.ipynb` — executed: moduli → gcd → factorization
+  → `d` → RSA round-trip.
+- `breaks/05-keygen_fleet/README.md` — assumption, misuse vs. primitive, and artifact.
+- Artifact: `p = 14723961130838400979`,
   `d(device0) = 155006092543738932355592225651672081825`,
-  `d(device2) = 101591964428919489627153881052022337249`, confirmados con
+  `d(device2) = 101591964428919489627153881052022337249`, confirmed with
   `(m^e)^d mod n == m`.
 
-**What I did with it:** Revisé los archivos generados y pedí ajustes de redacción.
+**What I did with it:** Reviewed the generated files and asked for wording adjustments.
 
-**Did I understand it?** Sí — un gcd entre los moduli revela el primo compartido y la
-  clave privada sale de la factorización, sin atacar la matemática de RSA.
+**Did I understand it?** Yes — a gcd between the moduli reveals the shared prime, and
+  the private key follows from the factorization, without attacking RSA's math.
 
 ---
 
-## Breaks 00, 02 y 04 — bloques `__main__`
+## Breaks 00, 02 and 04 — `__main__` blocks
 
 **Date:** 2026-10-06
 **Tool:** OpenCode (DeepSeek V4.1 Flash)
-**What I asked:** Agregar a los scripts existentes un bloque `__main__` que imprima el
-  artefacto, como pide el README de `duel-1-crypto`.
-**What I got:** Bloques `__main__` en `00-reused_pad/reused_pad.py`,
-  `02-token_mac/token_mac.py` y `04-ctr_log/ctr_log.py`; los tres imprimen su artefacto
-  al correrlos. Nota del asistente: en `reused_pad` y `ctr_log` el último byte no
-  aparece en ningún XOR, así que la salida lo marca con `?` y se infiere por contexto.
-**What I did with it:** Revisé las salidas de los cinco scripts.
+**What I asked:** Add a `__main__` block to the existing scripts so they print the
+  artifact, as the `duel-1-crypto` README asks.
+**What I got:** `__main__` blocks in `00-reused_pad/reused_pad.py`,
+  `02-token_mac/token_mac.py` and `04-ctr_log/ctr_log.py`; all three print their
+  artifact when run. Assistant's note: in `reused_pad` and `ctr_log` the last byte
+  never appears in any XOR, so the output marks it with `?` and it is inferred from
+  context.
+**What I did with it:** Reviewed the outputs of the five scripts.
 
-**Did I understand it?** Sí.
+**Did I understand it?** Yes.
 
 ---
 
