@@ -1,4 +1,5 @@
 # AI Log — Homework 1 (Duel 1, Crypto & Protocols)
+Daniel Andrade - Andrés Vega - Carlos Flores
 
 Per [`resources/ai-policy.md`](../../../resources/ai-policy.md). All data shared with the
 assistant was the course's synthetic lab material (`duel1_targets.py`, studios,
