@@ -24,10 +24,3 @@ needed.
 **4. Does your design trade one goal for another (e.g. confidentiality vs. auditability)? Name the trade.**
 - **Symmetry traded for liveness**. The rule "valid only when both ACKs arrive" keeps the outcome symmetric, so neither party is committed alone. The cost is that a party who withholds their ACK, or a TTP that fails mid-protocol, leaves the contract unconfirmed. The party who already sent their ACK has no recourse inside the protocol.
 - **Confidentiality traded for fairness**. The contract is never hidden from the TTP, and the TTP also stores a full copy. It has to because it checks `H(contract)` and builds the final copy.
-
-**5. A limitation of our own artifacts.**
-
-In `reused_pad` and `ctr_log` the target message/entry is the longest one, so its
-final byte never appears in any XOR. The scripts print the recovered text with
-the last byte marked as `?`; the actual value (the final "k" of `msg3`, the last
-digit of the IP in `log2`) is inferred from context, not recovered.
