@@ -6,6 +6,72 @@ notebooks); no real secrets or personal data.
 
 ---
 
+## Break 06 — verify_login (timing side channel)
+
+**Date:** 2026-10-06
+**Tool:** OpenCode (DeepSeek V4.1 Flash)
+**What I asked:** "Necesito que me ayudes rompiendo los deployments 5 y 6" siguiendo el
+  formato de los breaks ya resueltos, y que el código reutilice snippets de las clases
+  de la semana 4.
+**What I got:**
+- `breaks/06-verify_login/verify_login.py` — `timing_attack` con `time_guesses` del
+  studio (mediciones interleaved) y `__main__` que imprime el artefacto.
+- `breaks/06-verify_login/verify_login.ipynb` — ejecutado: recupera `83fabf35`, cinco
+  corridas de fiabilidad (5/5) y una celda del fix con `constant_time_equal` /
+  `hmac.compare_digest`.
+- `breaks/06-verify_login/README.md` — assumption, misuse vs. primitive, artefacto y
+  fiabilidad (41 rounds por candidato, ~34 us de separación por byte).
+- El asistente señaló que el `--check` del instructor falla en `#6` en esta máquina
+  (usa medianas secuenciales); la versión interleaved recupera 5/5.
+- Después, a pedido del equipo, simplificó el lenguaje del README.
+
+**What I did with it:** Revisé los archivos generados y pedí ajustes de redacción.
+
+**Did I understand it?** Sí — el tiempo de la comparación depende del prefijo correcto;
+  con las mediciones interleaved y la mediana, la señal queda visible.
+
+---
+
+## Break 05 — keygen_fleet (shared RSA prime)
+
+**Date:** 2026-10-06
+**Tool:** OpenCode (DeepSeek V4.1 Flash)
+**What I asked:** La misma petición (deployments 5 y 6, reutilizando código de clase).
+**What I got:**
+- `breaks/05-keygen_fleet/keygen_fleet.py` — scan pairwise con `math.gcd` y
+  `factor_from_shared` del studio de la semana 4 (`studios/week-04/rsa_lab.py`) para
+  recuperar `d` de ambos dispositivos; `__main__` que imprime el artefacto.
+- `breaks/05-keygen_fleet/keygen_fleet.ipynb` — ejecutado: moduli → gcd →
+  factorización → `d` → round-trip RSA.
+- `breaks/05-keygen_fleet/README.md` — assumption, misuse vs. primitive y artefacto.
+- Artefacto: `p = 14723961130838400979`,
+  `d(device0) = 155006092543738932355592225651672081825`,
+  `d(device2) = 101591964428919489627153881052022337249`, confirmados con
+  `(m^e)^d mod n == m`.
+
+**What I did with it:** Revisé los archivos generados y pedí ajustes de redacción.
+
+**Did I understand it?** Sí — un gcd entre los moduli revela el primo compartido y la
+  clave privada sale de la factorización, sin atacar la matemática de RSA.
+
+---
+
+## Breaks 00, 02 y 04 — bloques `__main__`
+
+**Date:** 2026-10-06
+**Tool:** OpenCode (DeepSeek V4.1 Flash)
+**What I asked:** Agregar a los scripts existentes un bloque `__main__` que imprima el
+  artefacto, como pide el README de `duel-1-crypto`.
+**What I got:** Bloques `__main__` en `00-reused_pad/reused_pad.py`,
+  `02-token_mac/token_mac.py` y `04-ctr_log/ctr_log.py`; los tres imprimen su artefacto
+  al correrlos. Nota del asistente: en `reused_pad` y `ctr_log` el último byte no
+  aparece en ningún XOR, así que la salida lo marca con `?` y se infiere por contexto.
+**What I did with it:** Revisé las salidas de los cinco scripts.
+
+**Did I understand it?** Sí.
+
+---
+
 ## Break 04 — ctr_log (AES-CTR nonce reuse)
 
 **Date:** 2026-10-06

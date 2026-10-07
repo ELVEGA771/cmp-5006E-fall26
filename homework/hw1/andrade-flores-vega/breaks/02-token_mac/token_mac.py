@@ -26,3 +26,14 @@ def find_secret_len(data: bytes, tag: int, extension: bytes, max_len: int = 32):
         if verify_token(forged_data, forged_tag):
             accepted.append(secret_len)
     return accepted
+
+
+if __name__ == "__main__":
+    token = issue_token()
+    data, tag = token["data"].encode(), token["tag"]
+    extension = b"&role=admin"
+    accepted = find_secret_len(data, tag, extension)
+    forged_data, forged_tag = forge_token(data, tag, accepted[0], extension)
+    print(f"forged data: {forged_data}")
+    print(f"forged tag:  {forged_tag}")
+    print(f"server accepts forged token: {verify_token(forged_data, forged_tag)}")
